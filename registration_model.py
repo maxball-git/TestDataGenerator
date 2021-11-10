@@ -1,54 +1,21 @@
-from mimesis import Person
-from mimesis.enums import Gender
-from mimesis import Numbers
-from mimesis import Text
-from src.helpers.db_manager import DbManager
+# DataGenerator - класс, позволяющий генерировать тестовые данные в соответствии с шаблоном/шаблонами
+# пример использования:
+# DataGenerator().generate(RT_NATURAL_PERSON) - генерирует физическое лицо
+# DataGenerator().generate(RT_NATURAL_PERSON, ['']) - генерирует юридическое лицо
+# DataGenerator().generate(RT_CAR, ['ABH']) - генерирует данные автомобиля с абхазским гос. номером
+# DataGenerator().generate(RT_CAR_SAFE, ['ABH']) - генерирует данные автомобиля с абхазским гос. номером
+# DataGenerator().generate(RT_CAR_SAFE, ['ABH', 'UNIQUE']) - генерирует данные автомобиля 
+#   с абхазским гос. номером и делает проверку в базе, для создания уникального гос. номера 
+#   адаптер к базе данных не включен в код и создается отдельно
+
+
 import random
-import allure
 from faker import Faker
+# DB адаптер не включенный в этот репозиторий
+from src.helpers.db_manager import DbManager
 
-
-class FakeRegistrationData(object):
-
-    def __init__(self):
-        self.person = Person('ru')
-        self.numbers = Numbers()
-        self.text = Text()
-
-    def create_registration_data_for_arm_lk(self):
-        registration_data = {}
-        person = Person('ru')
-        name = self.person.first_name(gender=Gender.MALE)
-        last_name = self.person.last_name(gender=Gender.MALE)
-        middle_name = self.person.surname(gender=Gender.MALE)
-        inn = self.numbers.integer_number(start=100000000000, end=999999999999)
-        ogrn = self.numbers.integer_number(start=100000000000000, end=999999999999999)
-        client_short_name = (self.text.words(quantity=1))[0]
-        email = person.email()
-        phone_number = person.telephone(mask='###########')
-        registration_addres = "Самарская обл"
-        locale_addres = "Самарская обл"
-        bank_name = (self.text.words(quantity=1))[0]
-        bank_bic = self.numbers.integer_number(start=100000000, end=999999999)
-        bank_kor_num = self.numbers.integer_number(start=100000000000000000000, end=999999999999999999999)
-        bank_client_num = self.numbers.integer_number(start=10000000000000000000, end=99999999999999999999)
-        bank_rec_name = (self.text.words(quantity=1))[0]
-        # password = person.password(length=8) # need open when fix bug in prod (only character can use in password)
-        password = 'qwertyui1'
-
-        registration_data.update({'Name': name, 'Last_name': last_name, 'Middle_name': middle_name,
-                                  'INN': str(inn), 'OGRN': str(ogrn), 'Client_short_name': client_short_name,
-                                  'EMAIL': email, 'Phone_number': phone_number,
-                                  'Registration_addres': registration_addres,
-                                  'Locale_addres': locale_addres, 'Bank_name': bank_name, 'Banc_bic': str(bank_bic),
-                                  'Bank_kor_num': str(bank_kor_num), 'Bank_client_num': str(bank_client_num),
-                                  'Bank_rec_name': bank_rec_name, 'Password': password})
-        return registration_data
-
-
-# by Bolotov Max
-
-
+# далее описаны некоторые функции для генерации контента
+# некоторые функции умеют в зависимости от переданного модификатора генерировать разный контент
 def get_random_region(reg):
     if reg.app:
         db_data = DbManager(reg.app).PostgreSQL.get_regions()
@@ -121,7 +88,7 @@ def gen_by_regex(pattern, chars, numbers='0123456789'):
             else:
                 res += pattern[i]
         elif pattern[i] == '.':
-            # формируем строку в равных пропорциях между цифрами и буквами
+            # формируем строку в примерно равных пропорциях между цифрами и буквами
             probability_equal_string = numbers*((len(all_chars) // len(numbers)) + 1)[:len(all_chars)] + all_chars
             # перемешиваем цифры с буквами и выбираем случайный символ
             res += random.choice("".join(random.sample(list(probability_equal_string), len(probability_equal_string))))
@@ -131,7 +98,6 @@ def gen_by_regex(pattern, chars, numbers='0123456789'):
     return res
 
 
-@allure.step("Генерируем незанятый ГРНЗ")
 def create_fake_car_grnz(reg, mods=None):
     if mods is None:
         mods = set()
@@ -176,7 +142,8 @@ def get_real_account_lk(reg, mods):
         # return DbManager(reg.app).PostgreSQL.test_login()
         return DbManager(reg.app).PostgreSQL.get_valid_lk_account(mods=mods)
 
-
+    
+# Адаптер/маппер между названиями полей и функциями генерации их контента 
 Faker_Fields_Names_Adapter = {
     'full_name': lambda reg, mods=None: mods is None and reg.faker.name() or (
             'male' in mods and reg.fabric.name_male() or ('female' in mods and reg.fabric.name_female() or
@@ -232,8 +199,11 @@ RT_CAR_SAFE = "уникальный ТС"
 RT_REAL_ACCOUNT = 'реальные логин и пароль'
 RT_REAL_ACCOUNT_NEGATIVE_BALANCE = 'реальные логин и пароль задолженность с постоплатой'
 
+# Простое перечисление всех типов шаблонов для импорта в проект и удобства работы
 Registration_types_names = (RT_NONE, RT_NATURAL_PERSON, RT_SOLE_PROPRIETOR, RT_LEGAL_PERSON, RT_CAR, RT_CAR_SAFE)
 
+# Здесь описаны шаблоны разных сущностей для генерации их полей 
+# включая встроенные модификаторы для некоторых полей
 Registration_types = {
     RT_NONE: {
         "fields": ['first_name', 'last_name', 'middle_name', "inn", "ogrn",
@@ -297,8 +267,8 @@ class MetaSingleton(type):
             cls._instances[cls] = super(MetaSingleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
 
-
-class Registration(metaclass=MetaSingleton):
+# Класс генерирующий данные по указанному шаблону
+class DataGenerator(metaclass=MetaSingleton):
 
     def __init__(self, app, locale='ru_RU', providers=None, generator=None, includes=None, **config):
         self.app = app
